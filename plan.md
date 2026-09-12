@@ -4,66 +4,110 @@
 
 **Target User Persona**
 
-* **Profile:** Gamers, students, and self-improvement enthusiasts struggling with delayed gratification.
-* **Pain Points:** Traditional to-do apps feel like chores; standard CRUD interfaces lack immediate feedback.
-* **Core Motivation:** Wants real-world productivity tied to immediate dopamine loops, visual leveling, streaks, and virtual rewards.
-* **Key Requirements:** Cross-device sync, fast responsive interaction, anti-cheat server validation, accessible keyboard navigation.
+* **Target Audience:** Gamers, students, and self-improvement enthusiasts dealing with procrastination and delayed gratification.
+* **Pain Points:** Traditional habit trackers feel repetitive and transactional; static to-do lists offer no immediate feedback loop.
+* **Core Motivation:** Seeking clear progress markers, instant dopamine hits, stat visualizers, streak preservation, and custom rewards.
+* **Key Technical Requirements:** Seamless cross-device synchronization, ultra-fast interactions, backend validation against stat inflation/cheating, and full keyboard access.
 
 **Tech Stack Selection**
 
-* **Frontend:** React + Vite + Tailwind CSS + Lucide Icons + Framer Motion. Uses a solid, high-contrast dark palette (Deep Obsidian `#0F172A`, Slate Charcoal `#1E293B`, Electric Violet `#7C3AED`, Emerald Accent `#10B981`) to avoid cheap "vibe-coded" AI templates.
-* **Backend:** Node.js (Express) with strict runtime schema validation (Zod) and structured error handling to enforce 0 uncaught errors.
-* **Database:** SQLite via Prisma ORM for clean, relational modeling, migration control, and query optimization.
-* **Authentication:** Supabase Auth (JWT/Session tokens) verifying identity on every API route to protect user data.
+* **Frontend:** React + Vite + Tailwind CSS + Framer Motion + Canvas-Confetti + Lucide Icons. Designed with a structured dark palette (Midnight Slate `#0F172A`, Dark Indigo `#1E1B4B`, Crisp Emerald `#10B981`, Muted Slate Borders `#334155`) to eliminate generic AI/vibe-coded aesthetics.
+* **Backend:** Node.js (Express) serving as the single source of truth to execute anti-cheat progression math, parse JWTs, and handle server-side state updates.
+* **Database & Storage:** Firebase Cloud Firestore for real-time relational JSON document persistence (Users, Tasks, Inventory).
+* **Authentication:** Supabase Auth (Email/Password & OAuth) returning JWTs to secure custom Node backend API endpoints.
 
 ---
 
-## Phase 2: Database Schema & Core Mechanics Engine
+## Phase 2: Clean Database Schema & Progression Logic
 
-**Clean Database Schema (Prisma / SQLite)**
+**Clean Database Schema (Firebase Cloud Firestore)**
 
-* **Users:** `id` (UUID), `supabase_id` (Indexed), `username`, `total_xp`, `level`, `gold`, `current_streak`, `last_active_date`, `created_at`.
-* **Tasks:** `id`, `user_id` (FK), `title`, `description`, `attribute` (INT, STR, DEX, WIS), `xp_reward`, `gold_reward`, `completed` (Boolean), `completed_at`.
-* **Inventory / Items:** `id`, `user_id` (FK), `item_name`, `item_type`, `cost`, `purchased_at`.
+* `users` collection (Document ID: `supabase_uid`)
+```json
+{
+  "username": "String",
+  "level": 1,
+  "total_xp": 0,
+  "gold": 50,
+  "current_streak": 0,
+  "last_active_date": "ISO-Date String",
+  "stats": { "intellect": 0, "strength": 0, "agility": 0, "wisdom": 0 },
+  "created_at": "Timestamp"
+}
+
+```
+
+
+* `tasks` collection (Document ID: `task_id`)
+```json
+{
+  "user_id": "String (indexed)",
+  "title": "String",
+  "description": "String",
+  "attribute": "intellect | strength | agility | wisdom",
+  "xp_reward": 25,
+  "gold_reward": 10,
+  "completed": false,
+  "completed_at": null,
+  "created_at": "Timestamp"
+}
+
+```
+
+
+* `inventory` collection (Document ID: `item_id`)
+```json
+{
+  "user_id": "String (indexed)",
+  "item_name": "String",
+  "cost": 50,
+  "purchased_at": "Timestamp"
+}
+
+```
+
+
 
 **RPG Progression Engine**
 
-* **XP Formula:** Non-linear curve calculated backend-side to prevent stat cheating:
-$$\text{XP Required for Next Level} = 100 \times (\text{Level})^{1.5}$$
+* **Non-Linear XP Formula (Server-Side Enforced):**
+
+$$\text{Required XP for Level } N = \left\lfloor 100 \times N^{1.5} \right\rfloor$$
 
 
-* **Attribute Mapping:** Tasks boost distinct stats (e.g., Coding $\rightarrow$ Intellect, Gym $\rightarrow$ Strength).
-* **Streak & Economy Engine:** Increments `current_streak` when completing $\ge 1$ task in a 24-hour window. Rewards users with gold to spend in the virtual reward shop.
-
----
-
-## Phase 3: Backend API Development & Error Reduction
-
-**API Endpoint Routes**
-
-* `POST /api/auth/sync` — Verifies Supabase JWT and creates/retrieving SQLite user record.
-* `GET /api/tasks` & `POST /api/tasks` — Fetch and create tasks for authenticated user.
-* `PATCH /api/tasks/:id/complete` — Calculates XP/gold, updates user stats, evaluates level-ups, updates streaks, returns updated state.
-* `POST /api/shop/buy` — Deducts gold, validates funds, appends item to user inventory.
-
-**Backend Debugging & 0-Error Strategy**
-
-* **Strict Validation:** Use Zod middleware on all request bodies (`req.body`) to prevent unhandled payloads.
-* **Centralized Error Middleware:** Catch all async errors with a global handler returning clean `{ success: false, error: message }` responses instead of throwing runtime exceptions.
-* **Optimistic UI Data Alignment:** Ensure all API responses return updated state so the frontend can recover smoothly if optimistic updates fail.
+* **Stat Mapping:** Task creation assigns an attribute. Completing a task increases character stats alongside total XP.
+* **Streak Maintenance:** Server checks `last_active_date` upon task completion. Completing a task within a 24–48 hour window increments `current_streak`; missing >48 hours resets it to 1.
 
 ---
 
-## Phase 4: Frontend UI, Polish & Deployment
+## Phase 3: Backend API Development & 0-Error Strategy
+
+**API Endpoint Routes (Node.js/Express + Firebase Admin SDK)**
+
+* `POST /api/auth/sync` — Accepts Supabase JWT, initializes or retrieves the user document in Firestore.
+* `GET /api/tasks` & `POST /api/tasks` — Fetch user tasks or validate/save a new task document.
+* `PATCH /api/tasks/:id/complete` — Runs a backend Firestore Transaction to verify task ownership, calculate XP/gold/level adjustments, increment streaks, update stats, and mark the task completed.
+* `POST /api/shop/buy` — Verifies user gold, deducts currency, and appends an item to the `inventory` sub-collection/collection.
+
+**Zero-Error Debugging & Defense Strategy**
+
+* **Runtime Schema Validation:** All incoming `req.body` payloads are strictly validated using Zod before reaching controllers to block malformed requests.
+* **Centralized Async Error Handler:** All Express routes wrap controller logic in a unified global error handler, preventing process crashes and returning standardized error JSON: `{ "success": false, "message": "Error description" }`.
+* **Firebase Admin Initialization Safety:** Implement singleton pattern initialization for Firebase Admin SDK to prevent re-initialization memory leaks during backend restarts.
+
+---
+
+## Phase 4: Frontend UI, Micro-Interactions & Deployment
 
 **UI/UX Implementation**
 
-* **Design & Feel:** Clean layout with structured cards, solid borders (`border-slate-700`), distinct visual hierarchy, micro-interactions for leveling up, and CSS particle triggers on task completion.
-* **Latency Management:** Implement optimistic UI updates for instant checkmarks while sending data to the Node backend in the background.
-* **Accessibility:** Full keyboard navigation (`Tab`, `Enter`, `Space`), screen reader aria-labels, and high-contrast text ratios.
+* **Solid Visual Palette:** Dark slate base cards with crisp 1px borders (`border-slate-800`), explicit typographic scaling, clear attribute color coding (Blue = Intellect, Red = Strength, Green = Agility, Gold = Currency), and zero gradient noise.
+* **Micro-Interactions:** Level up popups triggered by Framer Motion overlays, CSS particle explosions upon task completion, and tactile button pressed states.
+* **Optimistic Updates & Latency Hiding:** UI state immediately reflects completed tasks while sending background API requests, gracefully rolling back state if the Node server returns an error.
+* **Accessibility:** Native focus outlines, ARIA roles for custom progress bars, keyboard shortcuts (`Ctrl+N` for quick task entry), and semantic HTML (`<main>`, `<article>`, `<button>`).
 
 **Deployment & Verification Checklist**
 
-* **Public GitHub Repo:** Clean commit history ($\ge 3$ commits), backend/frontend source code, `.env.example` file.
-* **Database Persistence:** SQLite database attached via persistent storage volume or database host to satisfy true persistence rules.
-* **Walkthrough Video:** 90–180 second demonstration showing signup, task creation, completing a task, leveling up, and page refresh.
+* **Public Repo Setup:** Public GitHub repository containing backend `/server` and frontend `/client`, clean commit log ($\ge 3$ commits), and `.env.example`.
+* **Deployment:** Hosted live URL (Vercel/Render) connecting the React application to the Node backend and live Firebase Cloud Firestore instance.
+* **Walkthrough Video:** 90–180 second demonstration clip proving signup, task creation, leveling up, shop purchasing, and full persistence across browser refreshes.
