@@ -113,6 +113,5 @@ export async function signOut() {
     await fbSignOut(auth);
   } finally {
     localStorage.removeItem('auth_token');
-    localStorage.removeItem('supabase_token');
   }
 }

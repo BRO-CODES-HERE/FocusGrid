@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { auth } from './firebase';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -76,8 +77,7 @@ export default function App() {
   const syncAndLoad = async () => {
     try {
       const { apiFetch } = await import('./api');
-      const { data: { session } } = await supabase.auth.getSession();
-      const email = session?.user?.email;
+      const email = auth.currentUser?.email || null;
       await apiFetch('/auth/sync', {
         method: 'POST',
         body: JSON.stringify(email ? { email } : {}),
@@ -286,7 +286,7 @@ export default function App() {
               className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${authMode === 'login'
                 ? 'bg-emerald text-white shadow-sm'
                 : 'text-slateText hover:text-white'
-              }`}
+                }`}
             >
               Sign In
             </button>
@@ -295,7 +295,7 @@ export default function App() {
               className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${authMode === 'signup'
                 ? 'bg-emerald text-white shadow-sm'
                 : 'text-slateText hover:text-white'
-              }`}
+                }`}
             >
               Sign Up
             </button>
@@ -592,7 +592,7 @@ export default function App() {
                 <span>Active Tasks: <strong className="text-white">{tasks.length}</strong></span>
               </div>
               <div className="flex items-center gap-2 text-slateText text-sm">
-                <Coins size={16} />
+                <Coin size={16} />
                 <span>Gold: <strong className="text-gold">{pendingUser.gold}</strong></span>
               </div>
               <div className="flex items-center gap-2 text-slateText text-sm">
@@ -747,7 +747,7 @@ function ShopModal({ open, onClose, inventory, gold, items, onBuy }) {
                 className={`bg-midnight/60 border rounded-xl p-4 transition-all ${owned
                   ? 'border-emerald/30 bg-emerald/5'
                   : 'border-slateBorder hover:border-slateBorder/80'
-                }`}
+                  }`}
               >
                 <div className="flex items-start justify-between">
                   <div>
@@ -765,10 +765,10 @@ function ShopModal({ open, onClose, inventory, gold, items, onBuy }) {
                       className={`btn-press text-sm font-medium rounded-lg transition-all flex items-center gap-1 ${gold >= item.cost
                         ? 'bg-emerald hover:bg-emeraldDark text-white shadow-sm'
                         : 'bg-slateBorder/50 text-slateMuted cursor-not-allowed'
-                      }`}
+                        }`}
                       disabled={gold < item.cost}
                     >
-                      <Coins size={14} />
+                      <Coin size={14} />
                       {item.cost} Gold
                     </button>
                   )}

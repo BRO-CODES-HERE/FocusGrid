@@ -1,48 +1,18 @@
 import { getFirestoreInstance } from './firebase.js';
 import { AuthSyncSchema, CreateTaskSchema, CompleteTaskSchema, BuyItemSchema } from './schemas.js';
-import { createHmac } from 'node:crypto';
+import { getAuth } from 'firebase-admin/auth';
 
 const db = getFirestoreInstance();
 
-function verifyToken(token) {
+async function verifyToken(token) {
   if (!token) return null;
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
 
-  const [headerB64, payloadB64, signatureB64] = parts;
-
-  let payload;
   try {
-    payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+    const decodedToken = await getAuth().verifyIdToken(token);
+    return decodedToken.uid;
   } catch {
     return null;
   }
-
-  // 1. Firebase Auth ID token (standard JWT from Google Firebase Auth)
-  if (payload && (payload.user_id || payload.sub)) {
-    if (payload.iss && payload.iss.includes('securetoken.google.com')) {
-      return payload.user_id || payload.sub;
-    }
-  }
-
-  // 2. Supabase JWT HMAC check (if secret configured)
-  const secret = process.env.SUPABASE_JWT_SECRET;
-  if (secret && !secret.includes('your_actual')) {
-    const expectedSig = createHmac('sha256', secret)
-      .update(`${headerB64}.${payloadB64}`)
-      .digest('base64url');
-
-    if (signatureB64 === expectedSig && payload && payload.sub) {
-      return payload.sub;
-    }
-  }
-
-  // 3. Fallback for valid JWT payload with sub/user_id
-  if (payload && (payload.sub || payload.user_id)) {
-    return payload.sub || payload.user_id;
-  }
-
-  return null;
 }
 
 export async function syncUser(req, res, next) {
@@ -52,7 +22,7 @@ export async function syncUser(req, res, next) {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
     const token = authHeader.slice(7);
-    const uid = verifyToken(token);
+    const uid = await verifyToken(token);
     if (!uid) return res.status(401).json({ success: false, message: 'Invalid token' });
 
     const validated = AuthSyncSchema.safeParse({ uid, email: req.body?.email });
@@ -91,7 +61,7 @@ export async function getTasks(req, res, next) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
-    const uid = verifyToken(authHeader.slice(7));
+    const uid = await verifyToken(authHeader.slice(7));
     if (!uid) return res.status(401).json({ success: false, message: 'Invalid token' });
 
     const tasksRef = db.collection('tasks').where('user_id', '==', uid).where('completed', '==', false);
@@ -110,7 +80,7 @@ export async function createTask(req, res, next) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
-    const uid = verifyToken(authHeader.slice(7));
+    const uid = await verifyToken(authHeader.slice(7));
     if (!uid) return res.status(401).json({ success: false, message: 'Invalid token' });
 
     const validated = CreateTaskSchema.safeParse(req.body);
@@ -146,7 +116,7 @@ export async function completeTask(req, res, next) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
-    const uid = verifyToken(authHeader.slice(7));
+    const uid = await verifyToken(authHeader.slice(7));
     if (!uid) return res.status(401).json({ success: false, message: 'Invalid token' });
 
     const rawId = req.body?.task_id || req.params.id;
@@ -250,7 +220,7 @@ export async function buyItem(req, res, next) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
-    const uid = verifyToken(authHeader.slice(7));
+    const uid = await verifyToken(authHeader.slice(7));
     if (!uid) return res.status(401).json({ success: false, message: 'Invalid token' });
 
     const validated = BuyItemSchema.safeParse(req.body);
@@ -304,7 +274,7 @@ export async function getUserProfile(req, res, next) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
-    const uid = verifyToken(authHeader.slice(7));
+    const uid = await verifyToken(authHeader.slice(7));
     if (!uid) return res.status(401).json({ success: false, message: 'Invalid token' });
 
     const userRef = db.collection('users').doc(uid);
