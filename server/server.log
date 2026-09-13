@@ -1,0 +1,4 @@
+✅ Firebase Admin initialized via file (serviceAccountKey.json) (Cloud Firestore connected)
+(node:29372) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+FocusGrid server running on port 5000

@@ -8,7 +8,7 @@ import {
   Zap,
   Scale,
   Users,
-  Coins,
+  Coins as Coin,
   Flame,
   Shield,
   ShoppingCart,
@@ -57,23 +57,23 @@ export default function App() {
     async function init() {
       try {
         const { initAuth } = await import('./api');
-        const { supabase, user } = await initAuth();
+        const { user } = await initAuth();
         if (!user) {
           setAuthModal(true);
           setLoading(false);
           return;
         }
-        await syncAndLoad(supabase);
+        await syncAndLoad();
       } catch (e) {
         console.error(e);
-        setError('Failed to initialize — check Supabase credentials');
+        setError('Failed to initialize — check Firebase credentials');
         setLoading(false);
       }
     }
     init();
   }, []);
 
-  const syncAndLoad = async (supabase) => {
+  const syncAndLoad = async () => {
     try {
       const { apiFetch } = await import('./api');
       const profileData = await apiFetch('/profile');
@@ -96,16 +96,15 @@ export default function App() {
   // ─── Auth ─────────────────────────────────────────────────
   const handleAuth = async () => {
     try {
-      const { initAuth, signInWithEmail, signUpWithEmail } = await import('./api');
-      const { supabase } = await initAuth();
+      const { signInWithEmail, signUpWithEmail } = await import('./api');
 
       if (authMode === 'signup') {
-        await signUpWithEmail(supabase, email, password);
+        await signUpWithEmail(email, password);
       } else {
-        await signInWithEmail(supabase, email, password);
+        await signInWithEmail(email, password);
       }
 
-      await syncAndLoad(supabase);
+      await syncAndLoad();
       setAuthModal(false);
       setEmail('');
       setPassword('');
@@ -118,10 +117,8 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
-      const { initAuth, signOut } = await import('./api');
-      const { supabase } = await initAuth();
-      await signOut(supabase);
-      localStorage.removeItem('supabase_token');
+      const { signOut } = await import('./api');
+      await signOut();
       setAuthModal(true);
       setPendingUser(null);
       setTasks([]);
@@ -351,7 +348,7 @@ export default function App() {
           </form>
 
           <p className="text-center text-xs text-slateMuted mt-4">
-            Powered by Supabase Auth + FocusGrid API
+            Connected to Firebase (focusgrade-646ee) + FocusGrid API
           </p>
         </motion.div>
       </div>
@@ -765,7 +762,7 @@ function ShopModal({ open, onClose, inventory, gold, items, onBuy }) {
                       }`}
                       disabled={gold < item.cost}
                     >
-                      <Coin size={14} />
+                      <Coins size={14} />
                       {item.cost} Gold
                     </button>
                   )}

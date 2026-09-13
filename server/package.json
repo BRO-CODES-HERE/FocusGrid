@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test:firebase": "node src/test-firebase.js",
+    "seed": "node seed-firestore.js"
   },
   "dependencies": {
     "express": "^4.18.2",

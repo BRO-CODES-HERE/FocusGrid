@@ -1,5 +1,11 @@
-import { initializeApp, cert } from 'firebase-admin/app';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let firestoreInstance = null;
 let useMemoryStore = false;
@@ -143,39 +149,110 @@ function getMemoryFirestore() {
   return store;
 }
 
+function findServiceAccountCredentials() {
+  // 1. Check explicit environment variable paths
+  const candidateEnvPaths = [
+    process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+    process.env.GOOGLE_APPLICATION_CREDENTIALS,
+  ].filter(Boolean);
+
+  for (const envPath of candidateEnvPaths) {
+    const resolved = path.isAbsolute(envPath) ? envPath : path.resolve(process.cwd(), envPath);
+    if (fs.existsSync(resolved)) {
+      try {
+        const content = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+        if (content.project_id && (content.private_key || content.client_email)) {
+          return { source: `file (${path.basename(resolved)})`, data: content };
+        }
+      } catch (e) {
+        console.warn(`[Firebase] Could not parse credentials at ${resolved}:`, e.message);
+      }
+    }
+  }
+
+  // 2. Search common file names in server directory and root directory
+  const standardNames = [
+    'serviceAccountKey.json',
+    'firebase-service-account.json',
+    'firebase-adminsdk.json',
+  ];
+
+  const searchDirs = [
+    process.cwd(),
+    path.resolve(__dirname, '..'),
+    path.resolve(__dirname, '../..'),
+  ];
+
+  for (const dir of searchDirs) {
+    for (const name of standardNames) {
+      const fullPath = path.join(dir, name);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const content = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+          if (content.project_id && (content.private_key || content.client_email)) {
+            return { source: `file (${name})`, data: content };
+          }
+        } catch (e) {
+          console.warn(`[Firebase] Could not parse credentials at ${fullPath}:`, e.message);
+        }
+      }
+    }
+  }
+
+  // 3. Check individual environment variables in .env
+  const pid = process.env.FIREBASE_PROJECT_ID;
+  const email = process.env.FIREBASE_CLIENT_EMAIL;
+  const key = process.env.FIREBASE_PRIVATE_KEY;
+
+  const isPlaceholder = (val) =>
+    !val ||
+    val.includes('your_firebase') ||
+    val.includes('...') ||
+    val.trim() === '';
+
+  const hasEnvCreds = pid && email && key && !isPlaceholder(pid) && !isPlaceholder(email) && !isPlaceholder(key);
+
+  if (hasEnvCreds) {
+    return {
+      source: 'environment variables',
+      data: {
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^["']|["']$/g, ''),
+      },
+    };
+  }
+
+  return null;
+}
+
 export function getFirestoreInstance() {
   if (firestoreInstance) return firestoreInstance;
 
-  const hasCreds =
-    process.env.FIREBASE_PROJECT_ID &&
-    process.env.FIREBASE_CLIENT_EMAIL &&
-    process.env.FIREBASE_PRIVATE_KEY &&
-    process.env.FIREBASE_PRIVATE_KEY.trim() !== '...' &&
-    !process.env.FIREBASE_PRIVATE_KEY.includes('your_firebase');
+  const credentials = findServiceAccountCredentials();
 
-  if (!hasCreds) {
-    console.log('⚠️  No valid Firebase credentials — using in-memory store (data lost on restart)');
+  if (!credentials) {
+    console.log('⚠️  No valid Firebase credentials found — using in-memory store (data lost on restart)');
+    console.log('   👉 Tip: Place `serviceAccountKey.json` in `server/` or configure `server/.env` to connect Cloud Firestore.');
     useMemoryStore = true;
     firestoreInstance = getMemoryFirestore();
     return firestoreInstance;
   }
 
   try {
-    const serviceAccount = {
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    };
-
-    initializeApp({
-      credential: cert(serviceAccount),
-    });
+    const apps = getApps();
+    if (apps.length === 0) {
+      initializeApp({
+        credential: cert(credentials.data),
+      });
+    }
 
     firestoreInstance = getFirestore();
-    console.log('✅ Firebase Admin initialized (Cloud Firestore)');
+    useMemoryStore = false;
+    console.log(`✅ Firebase Admin initialized via ${credentials.source} (Cloud Firestore connected)`);
     return firestoreInstance;
   } catch (err) {
-    console.error('Firebase init failed, falling back to memory store:', err.message);
+    console.error('❌ Firebase init failed, falling back to in-memory store:', err.message);
     useMemoryStore = true;
     firestoreInstance = getMemoryFirestore();
     return firestoreInstance;
@@ -183,3 +260,4 @@ export function getFirestoreInstance() {
 }
 
 export { useMemoryStore };
+

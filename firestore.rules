@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────
+    // Reusable helpers
+    // ─────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // USERS  (doc id = Firebase Auth UID)
+    // Firestore creates user docs via Admin SDK (bypasses rules).
+    // ─────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Anyone signed in can read a profile (needed for future
+      // leaderboard/social features; tighten to isOwner(userId) if not).
+      allow read: if isSignedIn();
+      // Owner can update their profile but cannot change gold/XP/level —
+      // those are server-controlled to prevent cheating.
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+           .hasAny(['gold', 'total_xp', 'level', 'current_streak', 'stats']) == false;
+      // Clients never create/delete user docs; the Admin SDK does that.
+      allow create, delete: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // TASKS  (doc id = task_id, contains user_id field)
+    // ─────────────────────────────────────────────────────────────
+    match /tasks/{taskId} {
+      allow read: if isSignedIn() && resource.data.user_id == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.user_id == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == resource.data.user_id;
+      allow delete: if isSignedIn()
+        && resource.data.user_id == request.auth.uid;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // INVENTORY  (doc id = item_id, contains user_id field)
+    // ─────────────────────────────────────────────────────────────
+    match /inventory/{itemId} {
+      allow read: if isSignedIn() && resource.data.user_id == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.user_id == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == resource.data.user_id;
+      allow delete: if isSignedIn()
+        && resource.data.user_id == request.auth.uid;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // CONNECTION HEALTH CHECK (used by client/test-firestore.js)
+    // Scratch data only — never used by the app itself.
+    // ─────────────────────────────────────────────────────────────
+    match /_connection_test/{doc} {
+      allow read, write: if true;
+    }
+
+    // Server-side test scripts may use the Admin SDK (bypasses rules);
+    // _healthcheck is opened here only so the client test also works.
+    match /_healthcheck/{doc} {
+      allow read, write: if true;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // DENY EVERYTHING ELSE
+    // ─────────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const AuthSyncSchema = z.object({
-  supabase_uid: z.string().min(1),
+  uid: z.string().min(1),
   email: z.string().email().optional(),
 });
 
