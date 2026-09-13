@@ -23,12 +23,6 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ success: false, message: 'Internal server error' });
-});
-
 // Auth
 app.post('/api/auth/sync', syncUser);
 
@@ -42,6 +36,13 @@ app.post('/api/shop/buy', buyItem);
 
 // Profile
 app.get('/api/profile', getUserProfile);
+
+// Global error handler — must be after all routes
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ success: false, message: 'Internal server error' });
+});
 
 app.listen(PORT, () => {
   console.log(`FocusGrid server running on port ${PORT}`);

@@ -76,6 +76,12 @@ export default function App() {
   const syncAndLoad = async () => {
     try {
       const { apiFetch } = await import('./api');
+      const { data: { session } } = await supabase.auth.getSession();
+      const email = session?.user?.email;
+      await apiFetch('/auth/sync', {
+        method: 'POST',
+        body: JSON.stringify(email ? { email } : {}),
+      });
       const profileData = await apiFetch('/profile');
       setPendingUser(profileData.user);
       setInventory(profileData.inventory || []);
@@ -586,7 +592,7 @@ export default function App() {
                 <span>Active Tasks: <strong className="text-white">{tasks.length}</strong></span>
               </div>
               <div className="flex items-center gap-2 text-slateText text-sm">
-                <Coin size={16} />
+                <Coins size={16} />
                 <span>Gold: <strong className="text-gold">{pendingUser.gold}</strong></span>
               </div>
               <div className="flex items-center gap-2 text-slateText text-sm">
