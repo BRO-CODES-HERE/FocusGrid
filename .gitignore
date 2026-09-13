@@ -1,0 +1,24 @@
+# Env — never commit secrets
+.env
+.env.local
+*.env
+!.env.example
+
+# Deps
+node_modules/
+
+# Builds
+dist/
+build/
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temp / debug artifacts
+.header.json
+.jwt_token.txt
+.payload.json
