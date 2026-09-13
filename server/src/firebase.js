@@ -112,6 +112,16 @@ function getMemoryFirestore() {
       const tx = {
         collection(name) { return store.collection(name); },
         doc(id) { return makeDocRef('__default__', id); },
+        async get(ref) {
+          const pathParts = ref.path.split('/');
+          const coll = pathParts[0];
+          const docId = pathParts[1];
+          const doc = store.collections[coll]?.[docId];
+          if (!doc || !doc._exists) {
+            return { exists: false, data: () => null, id: docId };
+          }
+          return { exists: true, data: () => ({ ...doc._data }), id: docId };
+        },
         update(ref, data) {
           const pathParts = ref.path.split('/');
           const coll = pathParts[0];

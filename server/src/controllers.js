@@ -120,6 +120,10 @@ export async function createTask(req, res, next) {
   }
 }
 
+function xpForLevel(n) {
+  return Math.floor(100 * Math.pow(n, 1.5));
+}
+
 export async function completeTask(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -129,91 +133,97 @@ export async function completeTask(req, res, next) {
     const uid = verifyToken(authHeader.slice(7));
     if (!uid) return res.status(401).json({ success: false, message: 'Invalid token' });
 
-    const validated = CompleteTaskSchema.safeParse(req.body);
+    const rawId = req.body?.task_id || req.params.id;
+    const validated = CompleteTaskSchema.safeParse({ task_id: rawId });
     if (!validated.success) return res.status(400).json({ success: false, message: validated.error.message });
 
     const taskRef = db.collection('tasks').doc(validated.data.task_id);
-    const taskSnap = await taskRef.get();
-
-    if (!taskSnap.exists) return res.status(404).json({ success: false, message: 'Task not found' });
-    const task = taskSnap.data();
-    if (task.user_id !== uid) return res.status(403).json({ success: false, message: 'Not your task' });
-    if (task.completed) return res.status(400).json({ success: false, message: 'Already completed' });
-
     const userRef = db.collection('users').doc(uid);
-    const userSnap = await userRef.get();
-    if (!userSnap.exists) return res.status(404).json({ success: false, message: 'User not found' });
-
-    const user = userSnap.data();
-    const xpReward = task.xp_reward || 25;
-    const goldReward = task.gold_reward || 10;
-
-    function xpForLevel(n) {
-      return Math.floor(100 * Math.pow(n, 1.5));
-    }
-
-    let newLevel = user.level;
-    let newTotalXp = user.total_xp + xpReward;
-    let leveledUp = false;
-
-    while (newTotalXp >= xpForLevel(newLevel + 1)) {
-      newLevel++;
-      leveledUp = true;
-    }
-
     const now = new Date();
-    const lastActive = user.last_active_date ? new Date(user.last_active_date) : null;
-    let newStreak = user.current_streak;
-
-    if (lastActive) {
-      const diffMs = now - lastActive;
-      const diffHours = diffMs / (1000 * 60 * 60);
-      if (diffHours <= 48) {
-        newStreak++;
-      } else {
-        newStreak = 1;
-      }
-    } else {
-      newStreak = 1;
-    }
-
-    const stats = { ...user.stats };
-    const attrMap = { intellect: 'intellect', strength: 'strength', agility: 'agility', wisdom: 'wisdom' };
-    if (attrMap[task.attribute]) {
-      stats[attrMap[task.attribute]] = (stats[attrMap[task.attribute]] || 0) + 1;
-    }
+    let result = null;
 
     await db.runTransaction(async (transaction) => {
-      const userTxnRef = db.collection('users').doc(uid);
-      const taskTxnRef = db.collection('tasks').doc(validated.data.task_id);
+      const taskSnap = await transaction.get(taskRef);
+      if (!taskSnap.exists) {
+        const e = new Error('Task not found');
+        e.statusCode = 404;
+        throw e;
+      }
+      const task = taskSnap.data();
+      if (task.user_id !== uid) {
+        const e = new Error('Not your task');
+        e.statusCode = 403;
+        throw e;
+      }
+      if (task.completed) {
+        const e = new Error('Already completed');
+        e.statusCode = 400;
+        throw e;
+      }
 
-      transaction.update(userTxnRef, {
+      const userSnap = await transaction.get(userRef);
+      if (!userSnap.exists) {
+        const e = new Error('User not found');
+        e.statusCode = 404;
+        throw e;
+      }
+      const user = userSnap.data();
+
+      const xpReward = task.xp_reward || 25;
+      const goldReward = task.gold_reward || 10;
+
+      let newLevel = user.level || 1;
+      const newTotalXp = (user.total_xp || 0) + xpReward;
+      let leveledUp = false;
+      while (newTotalXp >= xpForLevel(newLevel + 1)) {
+        newLevel++;
+        leveledUp = true;
+      }
+
+      const lastActive = user.last_active_date ? new Date(user.last_active_date) : null;
+      let newStreak = 1;
+      if (lastActive && !Number.isNaN(lastActive.getTime())) {
+        const diffHours = (now - lastActive) / (1000 * 60 * 60);
+        newStreak = diffHours <= 48 ? (user.current_streak || 0) + 1 : 1;
+      }
+
+      const stats = { ...(user.stats || { intellect: 0, strength: 0, agility: 0, wisdom: 0 }) };
+      if (stats[task.attribute] !== undefined) {
+        stats[task.attribute] += 1;
+      }
+
+      transaction.update(userRef, {
         level: newLevel,
         total_xp: newTotalXp,
-        gold: user.gold + goldReward,
+        gold: (user.gold || 0) + goldReward,
         current_streak: newStreak,
         last_active_date: now.toISOString(),
-        stats: stats,
+        stats,
       });
 
-      transaction.update(taskTxnRef, {
+      transaction.update(taskRef, {
         completed: true,
         completed_at: now.toISOString(),
       });
+
+      result = { xpReward, goldReward, newLevel, leveledUp, newStreak };
     });
 
     const updatedUser = await userRef.get().then(doc => doc.data());
     res.json({
       success: true,
       task_completed: true,
-      xp_earned: xpReward,
-      gold_earned: goldReward,
-      new_level: newLevel,
-      leveled_up: leveledUp,
-      new_streak: newStreak,
+      xp_earned: result.xpReward,
+      gold_earned: result.goldReward,
+      new_level: result.newLevel,
+      leveled_up: result.leveledUp,
+      new_streak: result.newStreak,
       user: updatedUser,
     });
   } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
     next(err);
   }
 }
@@ -231,18 +241,22 @@ export async function buyItem(req, res, next) {
     if (!validated.success) return res.status(400).json({ success: false, message: validated.error.message });
 
     const userRef = db.collection('users').doc(uid);
-    const userSnap = await userRef.get();
-    if (!userSnap.exists) return res.status(404).json({ success: false, message: 'User not found' });
-
-    const user = userSnap.data();
-    if (user.gold < validated.data.cost) {
-      return res.status(400).json({ success: false, message: 'Not enough gold' });
-    }
-
     const itemRef = db.collection('inventory').doc();
+
     await db.runTransaction(async (transaction) => {
-      const userTxnRef = db.collection('users').doc(uid);
-      transaction.update(userTxnRef, {
+      const userSnap = await transaction.get(userRef);
+      if (!userSnap.exists) {
+        const e = new Error('User not found');
+        e.statusCode = 404;
+        throw e;
+      }
+      const user = userSnap.data();
+      if ((user.gold || 0) < validated.data.cost) {
+        const e = new Error('Not enough gold');
+        e.statusCode = 400;
+        throw e;
+      }
+      transaction.update(userRef, {
         gold: user.gold - validated.data.cost,
       });
       transaction.set(itemRef, {
@@ -261,6 +275,9 @@ export async function buyItem(req, res, next) {
       remaining_gold: updatedUser.gold,
     });
   } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
     next(err);
   }
 }

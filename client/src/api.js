@@ -32,13 +32,13 @@ export async function initAuth() {
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey);
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { session } } = await supabase.auth.getSession();
 
-  if (user) {
-    localStorage.setItem('supabase_token', user.access_token);
+  if (session?.access_token) {
+    localStorage.setItem('supabase_token', session.access_token);
   }
 
-  return { supabase, user };
+  return { supabase, user: session?.user ?? null, session };
 }
 
 export async function signInWithEmail(supabase, email, password) {
@@ -47,8 +47,8 @@ export async function signInWithEmail(supabase, email, password) {
     password,
   });
   if (error) throw error;
-  if (data.user) {
-    localStorage.setItem('supabase_token', data.user.access_token);
+  if (data.session?.access_token) {
+    localStorage.setItem('supabase_token', data.session.access_token);
   }
   return data;
 }
@@ -59,6 +59,9 @@ export async function signUpWithEmail(supabase, email, password) {
     password,
   });
   if (error) throw error;
+  if (data.session?.access_token) {
+    localStorage.setItem('supabase_token', data.session.access_token);
+  }
   return data;
 }
 
